@@ -1,0 +1,20 @@
+{
+  "source_commit": "f0c84252829602347757ecbb0810d74d3c837a4b",
+  "globals": {
+    "dwEntityList": 41003272,
+    "dwViewMatrix": 39235616,
+    "dwLocalPlayerPawn": 39212824
+  },
+  "fields": {
+    "health": 844,
+    "team": 999,
+    "life_state": 852,
+    "scene_node": 816,
+    "origin": 200,
+    "dormant": 259,
+    "view_offset": 3936,
+    "eye_angles": 13824,
+    "pawn_handle": 2348,
+    "name": 1788
+  }
+}
