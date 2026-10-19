@@ -52,8 +52,8 @@ class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title('CS2 ESP • Blickrichtung & Zielhilfe')
-        self.geometry('680x670')
-        self.minsize(660, 640)
+        self.geometry('720x790')
+        self.minsize(700, 760)
         style = ttk.Style(self)
         style.theme_use('clam')
         style.configure('TFrame', background='#edf2f6')
@@ -72,6 +72,9 @@ class App(tk.Tk):
         self.last_aim_frame = None
         self.aimer = MouseAimer()
         self.aim_enabled = tk.BooleanVar(value=False)
+        self.auto_fire = tk.BooleanVar(value=False)
+        self.recoil_enabled = tk.BooleanVar(value=False)
+        self.recoil_rate = tk.DoubleVar(value=30)
         self.aim_radius = tk.DoubleVar(value=150)
         self.aim_strength = tk.DoubleVar(value=0.16)
         self.demo_crosshair = None
@@ -88,7 +91,13 @@ class App(tk.Tk):
         ttk.Scale(frame, from_=30, to=220, variable=self.length).pack(fill='x', pady=8)
         ttk.Separator(frame).pack(fill='x', pady=10)
         ttk.Checkbutton(frame, text='Zielhilfe aktivieren · rechte Maustaste halten · F8 schaltet aus', variable=self.aim_enabled).pack(anchor='w')
-        ttk.Label(frame, text='Kopfposition angenähert über Augenhöhe · kein automatisches Schießen', foreground='#536176').pack(anchor='w', pady=4)
+        ttk.Label(frame, text='Kopfposition angenähert über Augenhöhe · F8 schaltet alle Eingaben aus', foreground='#536176').pack(anchor='w', pady=4)
+        ttk.Checkbutton(frame, text='Auto-Schuss bei erfasstem Kopfziel (rechte Maustaste halten)', variable=self.auto_fire).pack(anchor='w', pady=3)
+        ttk.Checkbutton(frame, text='Spray-Korrektur: bei rechts + links halten nach unten bewegen', variable=self.recoil_enabled).pack(anchor='w', pady=3)
+        recoil_controls = ttk.Frame(frame)
+        recoil_controls.pack(fill='x')
+        ttk.Label(recoil_controls, text='Spray-Korrektur / Sekunde').pack(side='left')
+        ttk.Scale(recoil_controls, from_=0, to=120, variable=self.recoil_rate, length=250).pack(side='left', padx=10)
         tuning = ttk.Frame(frame)
         tuning.pack(fill='x', pady=4)
         ttk.Label(tuning, text='Suchradius (Pixel)').grid(row=0, column=0, sticky='w')
@@ -168,6 +177,8 @@ class App(tk.Tk):
         self.session += 1
         self.stop_event.set()
         self.aim_enabled.set(False)
+        self.auto_fire.set(False)
+        self.recoil_enabled.set(False)
         self.aimer.reset()
         self.last_aim_frame = None
         self.demo_crosshair = None
@@ -208,6 +219,8 @@ class App(tk.Tk):
     def tick(self):
         if key_state(0x77) & 0x8000:  # F8: disable immediately, never toggle back on.
             self.aim_enabled.set(False)
+            self.auto_fire.set(False)
+            self.recoil_enabled.set(False)
             self.aimer.reset()
         try:
             while True:
@@ -251,9 +264,12 @@ class App(tk.Tk):
                 self.last_aim_frame = self.last_snapshot
                 try:
                     target_point = self.aimer.step(self.pid, self.snapshot[1], self.snapshot[0], width, height,
-                                                   self.aim_radius.get(), self.aim_strength.get(), time.monotonic() - self.last_snapshot)
+                                                   self.aim_radius.get(), self.aim_strength.get(), time.monotonic() - self.last_snapshot,
+                                                   auto_fire=self.auto_fire.get(), recoil_rate=self.recoil_rate.get() if self.recoil_enabled.get() else 0)
                 except OSError as error:
                     self.aim_enabled.set(False)
+                    self.auto_fire.set(False)
+                    self.recoil_enabled.set(False)
                     self.status.set(str(error))
             elif not self.aim_enabled.get():
                 self.aimer.reset()
