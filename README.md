@@ -1,6 +1,14 @@
-# CS2 ESP – Kästen und Blickrichtung
+# CS2 ESP – Kästen, Blickrichtung und Zielhilfe
 
 Windows-x64-Prototyp mit externer Anzeige von Gegner-Kästen, Namen, Lebenspunkten und einem türkisen Pfeil für den Blickwinkel des Spielers. Die Blickrichtung verwendet Pitch und Yaw; sie ist keine Vorhersage des nächsten Schusses. Keine Sichtbarkeitsprüfung: Die Farbe unterscheidet nicht zwischen sichtbaren und verdeckten Gegnern.
+
+## Zielhilfe
+
+Nach dem Verbinden **Zielhilfe aktivieren** einschalten und im aktiven CS2-Fenster die **rechte Maustaste halten**. Die Zielhilfe wählt einen lebenden Gegner innerhalb des eingezeichneten Suchkreises aus und bewegt die Maus schrittweise zu dessen projizierter Augenposition. Diese ist eine Annäherung an die Kopfmitte, kein ausgelesener Kopfknochen oder garantierter Kopftreffer. Es gibt keine Sichtbarkeitsprüfung; auch verdeckte Ziele können ausgewählt werden.
+
+Rechte Maustaste loslassen beendet die Bewegung. **F8**, **Stoppen** oder das Verlassen des CS2-Fensters unterbrechen die Zielhilfe. Sie ist beim Programmstart und nach jedem Stoppen oder Neuverbinden ausgeschaltet. Suchradius und Stärke sind im Bedienfenster einstellbar. Die rechte Maustaste behält ihre normale Spielbelegung, beispielsweise das Zielfernrohr.
+
+Mausbewegungen werden über die reguläre Windows-Funktion `SendInput` gesendet. Es wird nicht automatisch geschossen. Mausbewegungen hängen von der Spiel- und Windows-Empfindlichkeit sowie vom Zoom ab; eine passende Stärke muss gegebenenfalls angepasst werden. Bei abgewiesenen Eingaben wird die Zielhilfe abgeschaltet. Es gibt keine Umgehung einer Eingabesperre. In der Demo bewegt sich nur ein gezeichnetes Fadenkreuz, niemals der echte Mauszeiger.
 
 ## Starten
 

@@ -14,6 +14,7 @@ from tkinter import ttk, messagebox
 from geometry import project, player_box, look_endpoint
 from offsets import validate
 from winreader import Reader, game_rect, bind, user
+from aim import MouseAimer, key_state, choose_target, aim_step
 
 directory = Path(sys.executable).parent if getattr(sys, 'frozen', False) else Path(__file__).parent
 get_ancestor = bind(user, 'GetAncestor', [W.HWND, W.UINT], W.HWND)
@@ -50,9 +51,9 @@ def draw_players(canvas, players, matrix, width, height, boxes=True, names=True,
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title('CS2 ESP • Kästen & Blickrichtung')
-        self.geometry('640x470')
-        self.minsize(620, 450)
+        self.title('CS2 ESP • Blickrichtung & Zielhilfe')
+        self.geometry('680x670')
+        self.minsize(660, 640)
         style = ttk.Style(self)
         style.theme_use('clam')
         style.configure('TFrame', background='#edf2f6')
@@ -68,6 +69,12 @@ class App(tk.Tk):
         self.demo_canvas = None
         self.snapshot = None
         self.last_snapshot = 0
+        self.last_aim_frame = None
+        self.aimer = MouseAimer()
+        self.aim_enabled = tk.BooleanVar(value=False)
+        self.aim_radius = tk.DoubleVar(value=150)
+        self.aim_strength = tk.DoubleVar(value=0.16)
+        self.demo_crosshair = None
         self.boxes, self.names, self.directions = (tk.BooleanVar(value=True) for _ in range(3))
         self.length = tk.DoubleVar(value=100)
         self.status = tk.StringVar(value='Bereit. Demo benötigt kein Spiel.')
@@ -79,6 +86,16 @@ class App(tk.Tk):
             ttk.Checkbutton(frame, text=text, variable=variable).pack(anchor='w', pady=4)
         ttk.Label(frame, text='Länge der Blicklinie (Spieleinheiten)').pack(anchor='w', pady=(14, 0))
         ttk.Scale(frame, from_=30, to=220, variable=self.length).pack(fill='x', pady=8)
+        ttk.Separator(frame).pack(fill='x', pady=10)
+        ttk.Checkbutton(frame, text='Zielhilfe aktivieren · rechte Maustaste halten · F8 schaltet aus', variable=self.aim_enabled).pack(anchor='w')
+        ttk.Label(frame, text='Kopfposition angenähert über Augenhöhe · kein automatisches Schießen', foreground='#536176').pack(anchor='w', pady=4)
+        tuning = ttk.Frame(frame)
+        tuning.pack(fill='x', pady=4)
+        ttk.Label(tuning, text='Suchradius (Pixel)').grid(row=0, column=0, sticky='w')
+        ttk.Scale(tuning, from_=30, to=350, variable=self.aim_radius).grid(row=0, column=1, sticky='ew', padx=10)
+        ttk.Label(tuning, text='Stärke').grid(row=1, column=0, sticky='w', pady=8)
+        ttk.Scale(tuning, from_=0.05, to=0.5, variable=self.aim_strength).grid(row=1, column=1, sticky='ew', padx=10)
+        tuning.columnconfigure(1, weight=1)
         buttons = ttk.Frame(frame)
         buttons.pack(fill='x', pady=14)
         ttk.Button(buttons, text='Demo öffnen', command=self.start_demo).pack(side='left')
@@ -123,13 +140,13 @@ class App(tk.Tk):
                 started = time.monotonic()
                 try:
                     matrix, players = reader.frame()
-                    self.publish((session, reader.pid, matrix, players, None))
+                    self.publish((session, reader.pid, matrix, players, None, started))
                 except (OSError, ValueError, RuntimeError) as error:
-                    self.publish((session, reader.pid, None, [], str(error)))
+                    self.publish((session, reader.pid, None, [], str(error), started))
                     stop_event.wait(0.3)
                 stop_event.wait(max(0, 1 / 30 - (time.monotonic() - started)))
         except Exception as error:
-            self.publish((session, None, None, [], str(error)))
+            self.publish((session, None, None, [], str(error), time.monotonic()))
         finally:
             if reader:
                 reader.close()
@@ -150,6 +167,10 @@ class App(tk.Tk):
     def stop(self):
         self.session += 1
         self.stop_event.set()
+        self.aim_enabled.set(False)
+        self.aimer.reset()
+        self.last_aim_frame = None
+        self.demo_crosshair = None
         self.pid = self.snapshot = None
         self.overlay.withdraw()
         self.canvas.delete('all')
@@ -171,15 +192,31 @@ class App(tk.Tk):
     def render(self, canvas, players, matrix, width, height):
         draw_players(canvas, players, matrix, width, height, self.boxes.get(), self.names.get(), self.directions.get(), self.length.get())
 
+    def aim_marker(self, canvas, width, height, center=None, target=None):
+        if not self.aim_enabled.get():
+            return
+        x, y = center or (width / 2, height / 2)
+        radius = self.aim_radius.get()
+        canvas.create_oval(x - radius, y - radius, x + radius, y + radius, outline='#8aa1b7', dash=(3, 5))
+        if center:
+            canvas.create_line(x - 8, y, x + 8, y, fill='white', width=2)
+            canvas.create_line(x, y - 8, x, y + 8, fill='white', width=2)
+        if target:
+            tx, ty = target
+            canvas.create_oval(tx - 7, ty - 7, tx + 7, ty + 7, outline='#ffda66', width=2)
+
     def tick(self):
+        if key_state(0x77) & 0x8000:  # F8: disable immediately, never toggle back on.
+            self.aim_enabled.set(False)
+            self.aimer.reset()
         try:
             while True:
-                session, pid, matrix, players, error = self.messages.get_nowait()
+                session, pid, matrix, players, error, captured = self.messages.get_nowait()
                 if session != self.session:
                     continue
                 self.pid = pid
                 self.snapshot = (matrix, players) if matrix else None
-                self.last_snapshot = time.monotonic()
+                self.last_snapshot = captured
                 self.status.set(error or f'Verbunden · {len(players)} Gegnerdaten · Anzeige nur bei aktivem CS2-Fenster.')
         except queue.Empty:
             pass
@@ -191,7 +228,15 @@ class App(tk.Tk):
                 x, y = (index - 1) * 125 + math.sin(now * 0.4 + index) * 15, 300 + index * 55
                 players.append({'name': f'Demo-Spieler {index + 1}', 'health': 100 - index * 25, 'origin': (x, y, 0),
                                 'eye': (x, y, 64), 'angles': (math.sin(now * 0.5 + index) * 20, now * 25 + index * 120)})
-            self.render(self.demo_canvas, players, matrix, max(1, self.demo_canvas.winfo_width()), max(1, self.demo_canvas.winfo_height()))
+            width, height = max(1, self.demo_canvas.winfo_width()), max(1, self.demo_canvas.winfo_height())
+            self.render(self.demo_canvas, players, matrix, width, height)
+            if self.demo_crosshair is None:
+                self.demo_crosshair = (width / 2, height / 2)
+            target = choose_target(players, matrix, width, height, self.aim_radius.get(), center=self.demo_crosshair)
+            if self.aim_enabled.get() and target:
+                dx, dy = aim_step(target[2], self.demo_crosshair, self.aim_strength.get())
+                self.demo_crosshair = (self.demo_crosshair[0] + dx, self.demo_crosshair[1] + dy)
+            self.aim_marker(self.demo_canvas, width, height, self.demo_crosshair, target[2] if target else None)
         rect = game_rect(self.pid) if self.pid else None
         if rect and self.snapshot and time.monotonic() - self.last_snapshot < 0.5:
             x, y, width, height = rect
@@ -201,7 +246,20 @@ class App(tk.Tk):
             # Show without activating, even on the first frame.
             position_window(self.overlay_hwnd, W.HWND(-1), x, y, width, height, 0x10 | 0x40)
             self.render(self.canvas, self.snapshot[1], self.snapshot[0], width, height)
+            target_point = None
+            if self.aim_enabled.get() and self.last_aim_frame != self.last_snapshot:
+                self.last_aim_frame = self.last_snapshot
+                try:
+                    target_point = self.aimer.step(self.pid, self.snapshot[1], self.snapshot[0], width, height,
+                                                   self.aim_radius.get(), self.aim_strength.get(), time.monotonic() - self.last_snapshot)
+                except OSError as error:
+                    self.aim_enabled.set(False)
+                    self.status.set(str(error))
+            elif not self.aim_enabled.get():
+                self.aimer.reset()
+            self.aim_marker(self.canvas, width, height, target=target_point)
         else:
+            self.aimer.reset()
             self.overlay.withdraw()
             self.canvas.delete('all')
         self.after(33, self.tick)

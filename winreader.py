@@ -185,7 +185,7 @@ class Reader:
                         continue
                     name = self.read(controller + f['name'], 128).split(b'\0', 1)[0].decode('utf-8', errors='replace')
                     name = ''.join(c for c in name if c.isprintable())[:40]
-                    batch.append({'name': name or 'Spieler', 'health': health, 'origin': origin,
+                    batch.append({'id': pawn, 'name': name or 'Spieler', 'health': health, 'origin': origin,
                                   'eye': tuple(a + b for a, b in zip(origin, offset)), 'angles': angles[:2]})
                 except (OSError, ValueError, OverflowError):
                     continue
