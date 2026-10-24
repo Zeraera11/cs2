@@ -1,9 +1,9 @@
 {
-  "source_commit": "f0c84252829602347757ecbb0810d74d3c837a4b",
+  "source_commit": "1005c258412a3657ac73ed1a9f84b9cbedddd876",
   "globals": {
-    "dwEntityList": 41003272,
-    "dwViewMatrix": 39235616,
-    "dwLocalPlayerPawn": 39212824
+    "dwEntityList": 41011384,
+    "dwViewMatrix": 39243744,
+    "dwLocalPlayerPawn": 39220952
   },
   "fields": {
     "health": 844,
